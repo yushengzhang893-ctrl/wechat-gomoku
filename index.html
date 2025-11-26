@@ -51,10 +51,11 @@
   }
 }
 </script>
-<link rel="stylesheet" href="/index.css">
 </head>
   <body>
     <div id="root"></div>
+    <!-- Point to the correct entry file in src/ -->
+    <script type="module" src="/src/main.tsx"></script>
     <script>
       // Register Service Worker for PWA support
       if ('serviceWorker' in navigator) {
@@ -69,6 +70,5 @@
         });
       }
     </script>
-  <script type="module" src="/index.tsx"></script>
-</body>
+  </body>
 </html>
