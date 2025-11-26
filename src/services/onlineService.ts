@@ -1,130 +1,192 @@
-import { Move, OnlineMessage, Player } from '../types';
+import type { Move, OnlineMessage, Player } from '../types';
 
-// Declare global PeerJS variable from CDN
-declare const Peer: any;
+// 正确的导入方式
+import Peer, { DataConnection } from 'peerjs';
 
 type MessageCallback = (msg: OnlineMessage) => void;
 type StatusCallback = (status: string) => void;
 
 class OnlineService {
-  private peer: any | null = null;
-  private conn: any | null = null;
+  private peer: Peer | null = null;
+  private conn: DataConnection | null = null;
   private onMessageCallback: MessageCallback | null = null;
-  private onStatusCallback: StatusCallback | null = null;
+  private onStatusCallback: StatusCallback | null | undefined = null;
+  private isHost: boolean = false;
 
-  // Generate a random short ID for the room
+  // 生成随机房间ID
   generateRoomId(): string {
     return Math.random().toString(36).substring(2, 7).toUpperCase();
   }
 
-  // Create a room (Host)
-  createRoom(roomId: string, msgCallback: MessageCallback, statusCallback?: StatusCallback) {
-    this.cleanup();
-    this.onMessageCallback = msgCallback;
-    this.onStatusCallback = statusCallback;
-    
-    // Initialize Peer with specific ID
-    const peerId = `GOMOKU-${roomId}`;
-    this.peer = new Peer(peerId);
-
-    this.peer.on('open', (id: string) => {
-      console.log('My peer ID is: ' + id);
-      if (this.onStatusCallback) this.onStatusCallback('WAITING');
-    });
-
-    this.peer.on('connection', (conn: any) => {
-      this.conn = conn;
-      this.setupConnection();
-      if (this.onStatusCallback) this.onStatusCallback('CONNECTED');
+  // 创建房间（主机）
+  async createRoom(roomId: string, msgCallback: MessageCallback, statusCallback?: StatusCallback): Promise<void> {
+    try {
+      this.cleanup();
+      this.isHost = true;
+      this.onMessageCallback = msgCallback;
+      this.onStatusCallback = statusCallback || null;
       
-      // Notify UI that someone joined (simulate JOIN message locally for Host)
-      if (this.onMessageCallback) {
-          this.onMessageCallback({ type: 'JOIN' });
-      }
-    });
+      const peerId = `gomoku-${roomId}`;
+      
+      this.peer = new Peer(peerId, {
+        debug: 2,
+        config: {
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:global.stun.twilio.com:3478' }
+          ]
+        }
+      });
 
-    this.peer.on('error', (err: any) => {
-      console.error(err);
-      alert("创建房间失败 (ID可能已被占用)，请重试");
-    });
+      return new Promise((resolve, reject) => {
+        if (!this.peer) return reject(new Error('Peer not initialized'));
+
+        this.peer.on('open', (id: string) => {
+          console.log('Host peer ID:', id);
+          if (this.onStatusCallback) this.onStatusCallback('WAITING');
+          resolve();
+        });
+
+        this.peer.on('connection', (conn: DataConnection) => {
+          this.conn = conn;
+          this.setupConnection();
+          if (this.onStatusCallback) this.onStatusCallback('CONNECTED');
+        });
+
+        this.peer.on('error', (err: any) => {
+          console.error('Peer error:', err);
+          if (this.onStatusCallback) this.onStatusCallback('ERROR');
+          reject(err);
+        });
+      });
+    } catch (error) {
+      console.error('Create room error:', error);
+      throw error;
+    }
   }
 
-  // Join a room (Guest)
-  joinRoom(roomId: string, msgCallback: MessageCallback, statusCallback?: StatusCallback) {
-    this.cleanup();
-    this.onMessageCallback = msgCallback;
-    this.onStatusCallback = statusCallback;
+  // 加入房间（客户端）
+  async joinRoom(roomId: string, msgCallback: MessageCallback, statusCallback?: StatusCallback): Promise<void> {
+    try {
+      this.cleanup();
+      this.isHost = false;
+      this.onMessageCallback = msgCallback;
+      this.onStatusCallback = statusCallback || null;
 
-    // Guest doesn't need a specific ID
-    this.peer = new Peer();
+      this.peer = new Peer({
+        debug: 2,
+        config: {
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:global.stun.twilio.com:3478' }
+          ]
+        }
+      });
 
-    this.peer.on('open', (id: string) => {
-      const hostId = `GOMOKU-${roomId}`;
-      console.log('Connecting to: ' + hostId);
-      
-      const conn = this.peer.connect(hostId);
-      
-      conn.on('open', () => {
-        this.conn = conn;
-        this.setupConnection();
-        if (this.onStatusCallback) this.onStatusCallback('CONNECTED');
-        
-        // Send JOIN message to host? PeerJS connection event handles this on host side.
-        // But we can send a hello
-        this.sendMessage({ type: 'JOIN' }); // Guest tells host they are ready
+      return new Promise((resolve, reject) => {
+        if (!this.peer) return reject(new Error('Peer not initialized'));
+
+        this.peer.on('open', (id: string) => {
+          console.log('Client peer ID:', id);
+          const hostId = `gomoku-${roomId}`;
+          
+          if (this.onStatusCallback) this.onStatusCallback('CONNECTING');
+          
+          this.conn = this.peer!.connect(hostId, {
+            reliable: true,
+            serialization: 'json'
+          });
+
+          this.conn.on('open', () => {
+            console.log('Connected to host');
+            if (this.onStatusCallback) this.onStatusCallback('CONNECTED');
+            this.setupConnection();
+            resolve();
+          });
+
+          this.conn.on('error', (err: any) => {
+            console.error('Connection error:', err);
+            if (this.onStatusCallback) this.onStatusCallback('ERROR');
+            reject(err);
+          });
+        });
+
+        this.peer.on('error', (err: any) => {
+          console.error('Peer error:', err);
+          if (this.onStatusCallback) this.onStatusCallback('ERROR');
+          reject(err);
+        });
       });
-      
-      conn.on('error', (err: any) => {
-          console.error("Connection Error", err);
-          alert("无法连接房间，请检查房间号");
-      });
-    });
+    } catch (error) {
+      console.error('Join room error:', error);
+      throw error;
+    }
   }
 
-  private setupConnection() {
+  private setupConnection(): void {
     if (!this.conn) return;
 
     this.conn.on('data', (data: any) => {
+      console.log('Received data:', data);
       if (this.onMessageCallback) {
         this.onMessageCallback(data as OnlineMessage);
       }
     });
 
     this.conn.on('close', () => {
+      console.log('Connection closed');
       if (this.onMessageCallback) {
         this.onMessageCallback({ type: 'LEAVE' });
       }
+      if (this.onStatusCallback) this.onStatusCallback('DISCONNECTED');
       this.cleanup();
+    });
+
+    this.conn.on('error', (err: any) => {
+      console.error('Connection error:', err);
+      if (this.onStatusCallback) this.onStatusCallback('ERROR');
     });
   }
 
-  sendMessage(msg: OnlineMessage) {
+  sendMessage(msg: OnlineMessage): boolean {
     if (this.conn && this.conn.open) {
-      this.conn.send(msg);
+      try {
+        this.conn.send(msg);
+        return true;
+      } catch (error) {
+        console.error('Send message error:', error);
+        return false;
+      }
     }
+    return false;
   }
 
-  sendMove(move: Move, player: Player) {
-    this.sendMessage({
+  sendMove(move: Move, player: Player): boolean {
+    return this.sendMessage({
       type: 'MOVE',
       payload: { move, player }
     });
   }
 
-  cleanup() {
+  getIsHost(): boolean {
+    return this.isHost;
+  }
+
+  cleanup(): void {
     if (this.conn) {
       this.conn.close();
+      this.conn = null;
     }
     if (this.peer) {
       this.peer.destroy();
+      this.peer = null;
     }
-    this.conn = null;
-    this.peer = null;
+    this.isHost = false;
   }
-  
-  disconnect() {
-      this.sendMessage({ type: 'LEAVE' });
-      setTimeout(() => this.cleanup(), 100);
+
+  disconnect(): void {
+    this.sendMessage({ type: 'LEAVE' });
+    setTimeout(() => this.cleanup(), 100);
   }
 }
 

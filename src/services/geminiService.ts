@@ -1,5 +1,5 @@
-import { GoogleGenAI, Type } from "@google/genai";
-import { BoardState, Move } from "../types";
+import  { GoogleGenAI, Type } from "@google/genai";
+import type { BoardState, Move } from "../types";
 
 // Initialize Gemini Client
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });

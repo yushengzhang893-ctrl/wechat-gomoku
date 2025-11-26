@@ -2,17 +2,9 @@ export type Player = 'black' | 'white';
 export type CellValue = Player | null;
 export type BoardState = CellValue[][];
 
-export enum GameMode {
-  PVP_LOCAL = 'PVP_LOCAL',
-  PVE_GEMINI = 'PVE_GEMINI',
-  PVP_ONLINE = 'PVP_ONLINE',
-}
+export type GameMode = 'PVP_LOCAL' | 'PVE_GEMINI' | 'PVP_ONLINE';
 
-export enum GameStatus {
-  IDLE = 'IDLE',
-  PLAYING = 'PLAYING',
-  ENDED = 'ENDED',
-}
+export type GameStatus = 'IDLE' | 'PLAYING' | 'ENDED';
 
 export interface WinResult {
   winner: Player | null;

@@ -1,4 +1,4 @@
-import { BoardState, Player, WinResult } from '../types';
+import type{ BoardState, Player, WinResult } from '../types';
 
 export const BOARD_SIZE = 15;
 

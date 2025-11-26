@@ -1,23 +1,37 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Board from './components/Board';
 import { Avatar } from './components/Avatar';
 import { 
     createEmptyBoard, 
     checkWin, 
-    isBoardFull, 
-    BOARD_SIZE 
+    isBoardFull
 } from './services/gameLogic';
 import { getGeminiMove } from './services/geminiService';
 import { onlineService } from './services/onlineService';
-import { 
+
+// 类型导入
+import type { 
     Player, 
     BoardState, 
-    GameStatus, 
-    GameMode, 
     WinResult,
     OnlineRole,
+    GameStatus,
+    GameMode,
     OnlineMessage
-} from './types.';
+} from './types';
+
+// 定义常量值（替代原来的枚举值）
+const GAME_MODES = {
+  PVP_LOCAL: 'PVP_LOCAL',
+  PVE_GEMINI: 'PVE_GEMINI', 
+  PVP_ONLINE: 'PVP_ONLINE',
+} as const;
+
+const GAME_STATUS = {
+  IDLE: 'IDLE',
+  PLAYING: 'PLAYING',
+  ENDED: 'ENDED',
+} as const;
 
 // Icons
 const RefreshIcon = () => (
@@ -31,9 +45,9 @@ const ShareIcon = () => (
 );
 
 const App: React.FC = () => {
-  // Game State
-  const [status, setStatus] = useState<GameStatus>(GameStatus.IDLE);
-  const [mode, setMode] = useState<GameMode>(GameMode.PVP_LOCAL);
+  // Game State - 使用字符串字面量而不是类型
+  const [status, setStatus] = useState<GameStatus>(GAME_STATUS.IDLE);
+  const [mode, setMode] = useState<GameMode>(GAME_MODES.PVP_LOCAL);
   const [board, setBoard] = useState<BoardState>(createEmptyBoard());
   const [currentPlayer, setCurrentPlayer] = useState<Player>('black');
   const [lastMove, setLastMove] = useState<{ row: number, col: number } | null>(null);
@@ -52,7 +66,7 @@ const App: React.FC = () => {
 
   const startGame = (selectedMode: GameMode) => {
     setMode(selectedMode);
-    setStatus(GameStatus.PLAYING);
+    setStatus(GAME_STATUS.PLAYING);
     setBoard(createEmptyBoard());
     setCurrentPlayer('black');
     setLastMove(null);
@@ -60,7 +74,7 @@ const App: React.FC = () => {
     setIsAiThinking(false);
 
     // Online reset
-    if (selectedMode !== GameMode.PVP_ONLINE) {
+    if (selectedMode !== GAME_MODES.PVP_ONLINE) {
         setOnlineRole(null);
         setRoomId("");
         onlineService.disconnect();
@@ -68,10 +82,10 @@ const App: React.FC = () => {
   };
 
   const returnToMenu = () => {
-    if (mode === GameMode.PVP_ONLINE) {
+    if (mode === GAME_MODES.PVP_ONLINE) {
         onlineService.disconnect();
     }
-    setStatus(GameStatus.IDLE);
+    setStatus(GAME_STATUS.IDLE);
     setOnlineRole(null);
     setRoomId("");
     setIsWaitingForOpponent(false);
@@ -90,11 +104,11 @@ const App: React.FC = () => {
         setShowInviteModal(false);
         // Host tells Guest to start
         onlineService.sendMessage({ type: 'START_GAME' });
-        startGame(GameMode.PVP_ONLINE); // Reset board logic for host
+        startGame(GAME_MODES.PVP_ONLINE); // Reset board logic for host
     } else if (msg.type === 'START_GAME') {
         // Guest receives START_GAME
         setIsWaitingForOpponent(false);
-        startGame(GameMode.PVP_ONLINE); // Reset board logic for guest
+        startGame(GAME_MODES.PVP_ONLINE); // Reset board logic for guest
     } else if (msg.type === 'MOVE') {
         const { move, player } = msg.payload;
         // Apply remote move
@@ -107,7 +121,7 @@ const App: React.FC = () => {
         setCurrentPlayer('black');
         setLastMove(null);
         setWinResult(null);
-        setStatus(GameStatus.PLAYING);
+        setStatus(GAME_STATUS.PLAYING);
     }
   };
 
@@ -120,7 +134,7 @@ const App: React.FC = () => {
     setRoomId(newRoomId);
     setOnlineRole('host');
     setIsWaitingForOpponent(true);
-    setMode(GameMode.PVP_ONLINE);
+    setMode(GAME_MODES.PVP_ONLINE);
     
     onlineService.createRoom(newRoomId, handleOnlineMessage, handleConnectionStatus);
     setShowInviteModal(true);
@@ -134,7 +148,7 @@ const App: React.FC = () => {
     const id = inputRoomId.toUpperCase();
     setRoomId(id);
     setOnlineRole('guest');
-    setMode(GameMode.PVP_ONLINE);
+    setMode(GAME_MODES.PVP_ONLINE);
     
     // Guest joins and waits for host to say "START"
     onlineService.joinRoom(id, handleOnlineMessage, handleConnectionStatus);
@@ -143,6 +157,7 @@ const App: React.FC = () => {
   // --- Core Game Logic ---
 
   const applyMove = (row: number, col: number, player: Player) => {
+    // Explicitly copy the board to avoid reference issues
     const newBoard = board.map(r => [...r]);
     newBoard[row][col] = player;
     setBoard(newBoard);
@@ -151,9 +166,9 @@ const App: React.FC = () => {
     const result = checkWin(newBoard, row, col, player);
     if (result.winner) {
       setWinResult(result);
-      setStatus(GameStatus.ENDED);
+      setStatus(GAME_STATUS.ENDED);
     } else if (isBoardFull(newBoard)) {
-      setStatus(GameStatus.ENDED);
+      setStatus(GAME_STATUS.ENDED);
     } else {
       setCurrentPlayer(player === 'black' ? 'white' : 'black');
     }
@@ -161,12 +176,12 @@ const App: React.FC = () => {
 
   const handleCellClick = useCallback(async (row: number, col: number) => {
     // 1. Validation
-    if (status !== GameStatus.PLAYING || board[row][col] !== null || winResult?.winner || isAiThinking) {
+    if (status !== GAME_STATUS.PLAYING || board[row][col] !== null || winResult?.winner || isAiThinking) {
       return;
     }
 
     // 2. Online Permission Check
-    if (mode === GameMode.PVP_ONLINE) {
+    if (mode === GAME_MODES.PVP_ONLINE) {
         if (isWaitingForOpponent) return;
         // Host plays Black, Guest plays White
         if (onlineRole === 'host' && currentPlayer !== 'black') return;
@@ -177,19 +192,19 @@ const App: React.FC = () => {
     applyMove(row, col, currentPlayer);
 
     // 4. Handle Online Sending
-    if (mode === GameMode.PVP_ONLINE) {
+    if (mode === GAME_MODES.PVP_ONLINE) {
         onlineService.sendMove({ x: row, y: col }, currentPlayer);
     }
 
     // 5. Handle AI
-    if (mode === GameMode.PVE_GEMINI) {
+    if (mode === GAME_MODES.PVE_GEMINI) {
         setIsAiThinking(true);
     }
   }, [board, currentPlayer, status, winResult, mode, isAiThinking, onlineRole, isWaitingForOpponent]);
 
   // AI Turn Effect
   useEffect(() => {
-    if (mode === GameMode.PVE_GEMINI && currentPlayer === 'white' && status === GameStatus.PLAYING && !winResult?.winner && isAiThinking) {
+    if (mode === GAME_MODES.PVE_GEMINI && currentPlayer === 'white' && status === GAME_STATUS.PLAYING && !winResult?.winner && isAiThinking) {
         const makeAiMove = async () => {
             try {
                 await new Promise(resolve => setTimeout(resolve, 600)); 
@@ -209,21 +224,21 @@ const App: React.FC = () => {
 
   // Handle Online Restart
   const handleRestart = () => {
-    if (mode === GameMode.PVP_ONLINE) {
+    if (mode === GAME_MODES.PVP_ONLINE) {
         onlineService.sendMessage({ type: 'RESTART' });
     }
     setBoard(createEmptyBoard());
     setCurrentPlayer('black');
     setLastMove(null);
     setWinResult(null);
-    setStatus(GameStatus.PLAYING);
+    setStatus(GAME_STATUS.PLAYING);
   };
 
 
   // ---- Renders ----
 
   // 1. Main Menu
-  if (status === GameStatus.IDLE && !onlineRole) {
+  if (status === GAME_STATUS.IDLE && !onlineRole) {
     return (
       <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-6 space-y-12">
         <div className="text-center space-y-4">
@@ -241,7 +256,7 @@ const App: React.FC = () => {
 
         <div className="w-full max-w-xs space-y-4">
             <button 
-                onClick={() => startGame(GameMode.PVP_LOCAL)}
+                onClick={() => startGame(GAME_MODES.PVP_LOCAL)}
                 className="w-full py-4 bg-white active:bg-gray-50 text-gray-800 rounded-xl font-semibold shadow-sm flex items-center justify-center space-x-2 border border-gray-200"
             >
                 <span>👥</span>
@@ -255,7 +270,7 @@ const App: React.FC = () => {
                 <span>在线对战 (邀请)</span>
             </button>
             <button 
-                onClick={() => startGame(GameMode.PVE_GEMINI)}
+                onClick={() => startGame(GAME_MODES.PVE_GEMINI)}
                 className="w-full py-4 bg-white active:bg-gray-50 text-gray-800 border border-gray-200 rounded-xl font-semibold shadow-sm flex items-center justify-center space-x-2"
             >
                 <span>🤖</span>
@@ -267,7 +282,7 @@ const App: React.FC = () => {
   }
 
   // 2. Online Lobby (Select Create or Join)
-  if (status === GameStatus.IDLE && onlineRole === 'host' && !roomId) {
+  if (status === GAME_STATUS.IDLE && onlineRole === 'host' && !roomId) {
       return (
           <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-6 relative">
               <button onClick={returnToMenu} className="absolute top-6 left-6 p-2 bg-white rounded-full shadow-sm text-gray-600">
@@ -368,9 +383,9 @@ const App: React.FC = () => {
             <HomeIcon />
         </button>
         <span className="font-semibold text-gray-800">
-            {mode === GameMode.PVP_ONLINE 
+            {mode === GAME_MODES.PVP_ONLINE 
                 ? `在线对战 (${roomId})` 
-                : mode === GameMode.PVP_LOCAL 
+                : mode === GAME_MODES.PVP_LOCAL 
                     ? '好友对战' 
                     : '人机对战 (Level: Master)'}
         </span>
@@ -384,11 +399,11 @@ const App: React.FC = () => {
         <Avatar 
             player="black" 
             isActive={currentPlayer === 'black' && !winResult} 
-            name={mode === GameMode.PVP_ONLINE && onlineRole === 'guest' ? "对手 (黑)" : "我方 (黑)"} 
+            name={mode === GAME_MODES.PVP_ONLINE && onlineRole === 'guest' ? "对手 (黑)" : "我方 (黑)"} 
         />
         <div className="flex items-center justify-center px-4 flex-col">
             <span className="text-2xl font-bold text-gray-300">VS</span>
-            {mode === GameMode.PVP_ONLINE && (
+            {mode === GAME_MODES.PVP_ONLINE && (
                 <span className="text-[10px] text-green-600 bg-green-50 px-2 py-0.5 rounded-full mt-1">Live</span>
             )}
         </div>
@@ -396,11 +411,11 @@ const App: React.FC = () => {
             player="white" 
             isActive={currentPlayer === 'white' && !winResult} 
             name={
-                mode === GameMode.PVE_GEMINI ? "Gemini AI" : 
-                mode === GameMode.PVP_ONLINE ? (onlineRole === 'guest' ? "我方 (白)" : "对手 (白)") :
+                mode === GAME_MODES.PVE_GEMINI ? "Gemini AI" : 
+                mode === GAME_MODES.PVP_ONLINE ? (onlineRole === 'guest' ? "我方 (白)" : "对手 (白)") :
                 "玩家 (白)"
             } 
-            isAi={mode === GameMode.PVE_GEMINI}
+            isAi={mode === GAME_MODES.PVE_GEMINI}
         />
       </div>
 
@@ -412,17 +427,17 @@ const App: React.FC = () => {
             lastMove={lastMove}
             winningLine={winResult?.winningLine || null}
             disabled={
-                status === GameStatus.ENDED || 
-                (mode === GameMode.PVE_GEMINI && currentPlayer === 'white') ||
-                (mode === GameMode.PVP_ONLINE && onlineRole === 'host' && currentPlayer !== 'black') ||
-                (mode === GameMode.PVP_ONLINE && onlineRole === 'guest' && currentPlayer !== 'white')
+                status === GAME_STATUS.ENDED || 
+                (mode === GAME_MODES.PVE_GEMINI && currentPlayer === 'white') ||
+                (mode === GAME_MODES.PVP_ONLINE && onlineRole === 'host' && currentPlayer !== 'black') ||
+                (mode === GAME_MODES.PVP_ONLINE && onlineRole === 'guest' && currentPlayer !== 'white')
             }
          />
       </div>
 
       {/* Footer / Status */}
       <div className="bg-white border-t border-gray-200 p-4 pb-8 safe-area-pb text-center min-h-[100px] flex items-center justify-center flex-col">
-        {status === GameStatus.ENDED ? (
+        {status === GAME_STATUS.ENDED ? (
             <div className="space-y-2 animate-bounce">
                 <div className="text-xl font-bold">
                     {winResult?.winner === 'black' ? '⚫ 黑棋获胜!' : winResult?.winner === 'white' ? '⚪ 白棋获胜!' : '平局!'}
@@ -436,7 +451,7 @@ const App: React.FC = () => {
             </div>
         ) : (
             <div className="text-gray-500 font-medium flex items-center space-x-2">
-               {isAiThinking || (mode === GameMode.PVP_ONLINE && ((onlineRole === 'host' && currentPlayer === 'white') || (onlineRole === 'guest' && currentPlayer === 'black'))) ? (
+               {isAiThinking || (mode === GAME_MODES.PVP_ONLINE && ((onlineRole === 'host' && currentPlayer === 'white') || (onlineRole === 'guest' && currentPlayer === 'black'))) ? (
                    <>
                     <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
                     <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
@@ -445,7 +460,7 @@ const App: React.FC = () => {
                    </>
                ) : (
                    <span>
-                       {mode === GameMode.PVP_ONLINE ? '你的回合' : `轮到 ${currentPlayer === 'black' ? '黑棋 (⚫)' : '白棋 (⚪)'} 落子`}
+                       {mode === GAME_MODES.PVP_ONLINE ? '你的回合' : `轮到 ${currentPlayer === 'black' ? '黑棋 (⚫)' : '白棋 (⚪)'} 落子`}
                    </span>
                )}
             </div>

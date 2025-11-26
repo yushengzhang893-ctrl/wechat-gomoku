@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { BoardState, Player } from '../types';
+import type{ BoardState, Player } from '../types';
 import { BOARD_SIZE } from '../services/gameLogic';
 
 interface BoardProps {
