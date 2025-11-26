@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import type{ BoardState, Player } from '../types';
+import type{ BoardState } from '../types';  // 移除了未使用的 Player 导入
 import { BOARD_SIZE } from '../services/gameLogic';
 
 interface BoardProps {
